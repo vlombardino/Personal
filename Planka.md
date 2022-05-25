@@ -112,5 +112,6 @@ services:
 
 SECRET_KEY ```openssl rand -hex 64```
 
+Default Login
 > Username: demo@demo.demo \
 > Password: demo
