@@ -1,0 +1,230 @@
+#!/bin/bash
+##
+
+## Destination of backup files
+## Script won't run if directory doesn't exist
+BACKUPDEST="/backup/vms"
+
+## How many days a compressed version will be left on server
+DAYS_TO_KEEP_TAR=2
+
+## Exempt VMs - Place each VM with a space seperating them
+## Example: 	( linux winxp win7 ) or 
+##			( "Ubuntu 8.04" "Windows XP" ) or
+##			( None )
+## More here: http://www.cyberciti.biz/faq/bash-for-loop-array/
+## Run Command to find list of VMS:
+## VBoxManage list vms | grep '"' | cut -d'"' -f2 2>/dev/null
+EXEMPTION_ARRAY=( None )
+
+## No need to modify
+HOST=`hostname`
+DATEFILE=`/bin/date +%G%m%d`
+VMLIST=`VBoxManage list vms | grep '"' | cut -d'"' -f2 2>/dev/null`
+
+#################################################################
+## Functions
+
+##
+## Create the backup directories if they do not exist
+##
+function doCheckDirectories {
+	echo
+	## Check to see if BACKUPDEST exist
+	if [ ! -d ${BACKUPDEST} ]; then
+		echo "BACKUPDEST does not exist!! Exiting Program."
+		exit 0
+	fi
+	## If the archives directory does not  exist, create it
+	if [ ! -d ${BACKUPDEST}/archives ]; then
+		echo "${BACKUPDEST}/archives does not exist, creating . . ."
+		mkdir "${BACKUPDEST}/archives"
+		echo
+	fi
+	## If the directories directory does not exist, create it
+	if [ ! -d ${BACKUPDEST}/directories ]; then
+		echo "${BACKUPDEST}/directories does not exist, creating . . ."
+		mkdir "${BACKUPDEST}/directories"
+		echo
+	fi
+}
+
+##
+## If this VM is in our exempt array, set VM_EXEMPT to skip entirely.
+##
+function doCheckExempt {
+	VM_EXEMPT=false
+	## array, if we get a match, set VM_EXEMPT to true
+	for check_vm in "${EXEMPTION_ARRAY[@]}"; do
+		if [ "${check_vm}" = "${VM}" ]; then
+		echo "${VM} is on the exception list, skipping."
+		echo
+		VM_EXEMPT=true
+		fi
+	done
+}
+
+##
+## Notify the starting time of backup
+##
+function startScript {
+	echo "-----------------------------------------------------"
+	echo "START - ${VM}"
+	echo "Host: ${HOST}"
+	echo "Date: `date`"
+	echo "-----------------------------------------------------"
+	echo
+}
+
+##
+## Notify the finishing time of backup
+##
+function finishScript {
+	echo
+	echo "-----------------------------------------------------"
+	echo "FINISH - ${VM}"
+	echo "Host: ${HOST}"
+	echo "Date: `date`"
+	echo "-----------------------------------------------------"
+}
+
+##
+## Suspend VM if its running, skip it if not
+##
+function suspendVM {
+	## Check state of VM
+	VMSTATE=`VBoxManage showvminfo "${VM}" --machinereadable | grep "^\(VMState=\)" | cut -d'"' -f2 2>/dev/null`
+
+	echo "${VM} state is currently: ${VMSTATE}"
+
+	## If VM is running, suspend it, otherwise, move on
+	if [ "${VMSTATE}" = "running" ]; then
+		echo "Suspending ${VM} . . ."
+		## Stop vm by saving current state (pause|resume|reset|poweroff|savestate)
+		VBoxManage controlvm ${VM} savestate
+		echo "${VM} Suspended on `date`"
+		echo
+	else
+		echo "${VM} was not suspended, not suspending - `date`"
+		echo
+    fi
+}
+
+##
+## Backup VM
+##
+function doBackup {
+	## Display location of XML file
+	XMLFILE=`VBoxManage showvminfo "${VM}" --machinereadable | grep "^\(CfgFile=\)" | cut -d'"' -f2 2>/dev/null`
+	## Display location of vdi file
+	LOCATION=`VBoxManage showvminfo "${VM}" --machinereadable | grep ".vdi" | cut -d'"' -f4 2>/dev/null`
+	
+	## If the directories directory does not exist, create it
+	if [ ! -d ${BACKUPDEST}/directories/${VM} ]; then
+		echo "${BACKUPDEST}/directories/${VM} does not exist, creating . . ."
+		mkdir "${BACKUPDEST}/directories/${VM}"
+		echo
+	fi
+	## Backup VM (clonehd)
+	echo "Backuping up "${VM}" to ${BACKUPDEST}/directories/${VM}/"
+	rsync -aP --stats "${XMLFILE}" "${BACKUPDEST}/directories/${VM}/"
+	rsync -aP --stats "${LOCATION}" "${BACKUPDEST}/directories/${VM}/"
+	echo	
+}
+
+##
+## Start VM if suspened
+##
+function doStart {
+	if [ "${VMSTATE}" = "running" ]; then
+		echo "Starting ${VM} . . ."
+		## Resume VMs which were running [--type gui|sdl|vrdp|headless]
+		VBoxManage startvm ${VM} --type headless
+		echo "${VM} Resumed on `date`"
+	else
+		echo "${VM} was not running, not resuming - `date`"
+	fi
+	echo
+}
+
+##
+## Making a compressed and mobile backup
+##
+## If pv (sudo apt-get install pv) is installed then progress bar will show
+##
+function doTar {
+	fileName="backup_${VM}-${DATEFILE}.tgz"    
+	echo "taring up ${VM} to ${BACKUPDEST}/archives/${fileName}"
+	if which pv >/dev/null; then
+		cd "${BACKUPDEST}/directories/${VM}/"
+		tar -cf - . \
+		| pv -s $(du -sb . \
+		| awk '{print $1}') | gzip > "${BACKUPDEST}/archives/${fileName}"
+	else	
+		tar -cf "${BACKUPDEST}/archives/${fileName}" -C "${BACKUPDEST}/directories/${VM}"
+	fi
+	echo
+}
+
+##
+## Clean up any tars that are older than DAYS_TO_KEEP_TAR
+##
+function doCleanTar {
+	echo "Cleaning up tars older than ${DAYS_TO_KEEP_TAR} day(s) old"
+	find "${BACKUPDEST}/archives" -name "backup_${VM}*.tgz" -mtime ${DAYS_TO_KEEP_TAR} -exec rm -vf {} \;
+}
+
+#################################################################
+## Script
+
+## Mount /backup to remote machine
+sshfs administrator@192.168.0.92:/backup /backup
+sleep 10
+
+## Make sure we have the appropriate directories for backups
+	doCheckDirectories
+## Start loop
+for VM in ${VMLIST}; do
+	sleep 1
+## Check exempt list
+	doCheckExempt
+	if [ "$VM_EXEMPT" = "false" ]; then
+		startScript
+	## Suspend VM
+		suspendVM
+		sleep 3
+	## Do Backup
+		doBackup
+	## Start if suspended
+		doStart
+	## Compressing backup
+		doTar
+		sleep 3
+	## Clean old backups
+		doCleanTar
+		sleep 3
+		finishScript
+	fi
+## Reset exemption
+	shift
+## Remove stale files
+echo "-----------------------------------------------------"
+echo "Cleaning up files in ${BACKUPDEST}/archives older than 3 days" 
+find "${BACKUPDEST}/archives" -mtime +3 -exec rm -vf {} \;
+echo "-----------------------------------------------------"
+## End backup
+done | tee "${BACKUPDEST}/${DATEFILE}-log"
+sleep 10
+
+#################################################################
+
+## Unmount /backup from remote machine
+fusermount -u /backup
+sleep 10
+#SUBJECT="Virtualbox - Backup"
+#SENDTO="vlombardino@htfsinc.com"
+#LOGFILE="${BACKUPDEST}/${DATEFILE}-log"
+##
+#sleep 10
+#/usr/bin/mail -s "${HOST} - ${SUBJECT}" "${SENDTO}" < ${LOGFILE}
+

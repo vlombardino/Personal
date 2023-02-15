@@ -1,0 +1,4 @@
+#!/bin/bash
+sudo /sbin/rcvboxdrv setup
+#sudo mv /var/lib/dkms/vboxhost /var/lib/dkms/vboxhost-$(date +%Y%m%d).bak
+#sudo /etc/init.d/vboxdrv setup

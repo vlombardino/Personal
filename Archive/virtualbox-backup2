@@ -1,0 +1,158 @@
+#!/bin/bash
+##
+
+## Destination of backup files
+## Script won't run if directory doesn't exist
+BACKUPDEST="administrator@192.168.0.92:/backup/vms"
+
+## How many days a compressed version will be left on server
+DAYS_TO_KEEP=2
+
+## Exempt VMs - Place each VM with a space seperating them
+## Example: 	( linux winxp win7 ) or 
+##			( "Ubuntu 8.04" "Windows XP" ) or
+##			( None )
+## More here: http://www.cyberciti.biz/faq/bash-for-loop-array/
+## Run Command to find list of VMS:
+## VBoxManage list vms | grep '"' | cut -d'"' -f2 2>/dev/null
+EXEMPTION_ARRAY=( None )
+
+## No need to modify
+HOST=`hostname`
+DATEFILE=`/bin/date +%G%m%d`
+VMLIST=`VBoxManage list vms | grep '"' | cut -d'"' -f2 2>/dev/null`
+
+#################################################################
+## Functions
+
+##
+## If this VM is in our exempt array, set VM_EXEMPT to skip entirely.
+##
+function doCheckExempt {
+	VM_EXEMPT=false
+	## array, if we get a match, set VM_EXEMPT to true
+	for check_vm in "${EXEMPTION_ARRAY[@]}"; do
+		if [ "${check_vm}" = "${VM}" ]; then
+		echo "${VM} is on the exception list, skipping."
+		echo
+		VM_EXEMPT=true
+		fi
+	done
+}
+
+##
+## Notify the starting time of backup
+##
+function startScript {
+	echo "-----------------------------------------------------"
+	echo "START - ${VM}"
+	echo "Host: ${HOST}"
+	echo "Date: `date`"
+	echo "-----------------------------------------------------"
+	echo
+}
+
+##
+## Notify the finishing time of backup
+##
+function finishScript {
+	echo
+	echo "-----------------------------------------------------"
+	echo "FINISH - ${VM}"
+	echo "Host: ${HOST}"
+	echo "Date: `date`"
+	echo "-----------------------------------------------------"
+}
+
+##
+## Suspend VM if its running, skip it if not
+##
+function suspendVM {
+	## Check state of VM
+	VMSTATE=`VBoxManage showvminfo "${VM}" --machinereadable | grep "^\(VMState=\)" | cut -d'"' -f2 2>/dev/null`
+
+	echo "${VM} state is currently: ${VMSTATE}"
+
+	## If VM is running, suspend it, otherwise, move on
+	if [ "${VMSTATE}" = "running" ]; then
+		echo "Suspending ${VM} . . ."
+		## Stop vm by saving current state (pause|resume|reset|poweroff|savestate)
+		VBoxManage controlvm ${VM} savestate
+		echo "${VM} Suspended on `date`"
+		echo
+	else
+		echo "${VM} was not suspended, not suspending - `date`"
+		echo
+    fi
+}
+
+##
+## Backup VM
+##
+function doBackup {
+	## Display location of XML file
+	XMLFILE=`VBoxManage showvminfo "${VM}" --machinereadable | grep "^\(CfgFile=\)" | cut -d'"' -f2 2>/dev/null`
+	## Display location of vdi file
+	LOCATION=`VBoxManage showvminfo "${VM}" --machinereadable | grep ".vdi" | cut -d'"' -f4 2>/dev/null`
+	
+	## Backup VM (clonehd)
+	echo "Backuping up "${VM}" to ${BACKUPDEST}/${VM}-${DATEFILE}/"
+	rsync -aP --inplace --stats "${XMLFILE}" "${BACKUPDEST}/${VM}-${DATEFILE}/"
+	rsync -aP --inplace --stats "${LOCATION}" "${BACKUPDEST}/${VM}-${DATEFILE}/"
+	echo	
+}
+
+##
+## Start VM if suspened
+##
+function doStart {
+	if [ "${VMSTATE}" = "running" ]; then
+		echo "Starting ${VM} . . ."
+		## Resume VMs which were running [--type gui|sdl|vrdp|headless]
+		VBoxManage startvm ${VM} --type headless
+		echo "${VM} Resumed on `date`"
+	else
+		echo "${VM} was not running, not resuming - `date`"
+	fi
+	echo
+}
+
+##
+## Clean up any files that are older than DAYS_TO_KEEP
+##
+function doClean {
+	echo "Cleaning up files in ${BACKUPDEST} older than ${DAYS_TO_KEEP} days"
+	find "${BACKUPDEST}" -mtime +${DAYS_TO_KEEP} -exec rm -vf {} \;
+}
+
+#################################################################
+## Script
+
+sleep 10
+
+## Start loop
+for VM in ${VMLIST}; do
+	sleep 1
+## Check exempt list
+	doCheckExempt
+	if [ "$VM_EXEMPT" = "false" ]; then
+		startScript
+	## Suspend VM
+		suspendVM
+		sleep 3
+	## Do Backup
+		doBackup
+	## Start if suspended
+		doStart
+	## Clean old backups
+		doClean
+		sleep 3
+		finishScript
+	fi
+## Reset exemption
+	shift
+## End backup
+done | tee "${BACKUPDEST}/${DATEFILE}-log"
+sleep 10
+
+#################################################################
