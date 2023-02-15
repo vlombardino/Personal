@@ -1,0 +1,11 @@
+Ghostscript is a great tool for compressing PDFs. In our tests it delivered the best compression ratio. Simply run:
+
+
+$ gs -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/screen -dNOPAUSE -dQUIET -dBATCH -sOutputFile=out.pdf in.pdf
+$ gs -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/ebook -dNOPAUSE -dQUIET -dBATCH -sOutputFile=out.pdf in.pdf
+$ gs -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/printer -dNOPAUSE -dQUIET -dBATCH -sOutputFile=out.pdf in.pdf
+
+-dPDFSETTINGS can be any of:
+/screen : low-resolution output, lowest output size
+/ebook : medium-resolution output, medium output size
+/printer OR /prepress : high-resolution with maximum output size
