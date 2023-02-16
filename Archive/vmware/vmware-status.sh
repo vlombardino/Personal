@@ -1,8 +1,8 @@
 #!/bin/bash
 
 VMBACKUP=/vmware
-USER=administrator
-PASS=Vel8282
+USER=USERNAME
+PASS=PASSWORD
 VMCMD=vmware-vim-cmd
 
 echo
