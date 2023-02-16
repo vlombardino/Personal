@@ -41,7 +41,6 @@ find -type f -name "*.pdf" -exec bash -c 'gs -sDEVICE=pdfwrite -dCompatibilityLe
 ```
 
 Batch conversion renaming all files with `screen` setting:
-Make a copy with `screen` setting:
 > Makes a copy renaming the file with `new`
 ```bash
 for file in *pdf; do gs -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/screen -dNOPAUSE -dQUIET -dBATCH -sOutputFile="new_${file}" -- "$file"; done
