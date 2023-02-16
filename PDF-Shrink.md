@@ -15,7 +15,7 @@ $ gs -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/printer -dNOPAUSE
 > /prepress: maximum output size (high quality, color preserving, 300 dpi imgs) \
 > /default: (almost identical to /screen)
 
-## Scripts
+## Batch Conversions
 Batch conversion all files with `screen` setting:
 > WARNING: This will overwrite the original file
 ```bash
